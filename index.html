@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Video Recorder</title>
+<style>
+  body { 
+    font-family: sans-serif; 
+    padding: 0; 
+    margin: 0; 
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #f8f8f8;
+    height: 100vh;
+  }
+
+  h2 {
+    margin: 10px 0;
+  }
+
+  video {
+    width: 100%;
+    height: calc(100vh - 160px);
+    object-fit: cover;
+    border: none;
+    background: black;
+    transform: scaleX(-1);
+  }
+
+  .btn-group {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  button { 
+    padding: 12px 20px; 
+    font-size: 16px; 
+    cursor: pointer;
+  }
+
+  /* Toast Style */
+  #toast {
+    visibility: hidden;
+    min-width: 250px;
+    background-color: #333;
+    color: #fff;
+    text-align: center;
+    border-radius: 4px;
+    padding: 16px;
+    position: fixed;
+    z-index: 1;
+    left: 50%;
+    bottom: 30px;
+    transform: translateX(-50%);
+    font-size: 17px;
+  }
+  #toast.show {
+    visibility: visible;
+    animation: fadein 0.5s, fadeout 0.5s 2.5s;
+  }
+  @keyframes fadein {
+    from {bottom: 0; opacity: 0;} 
+    to {bottom: 30px; opacity: 1;}
+  }
+  @keyframes fadeout {
+    from {bottom: 30px; opacity: 1;} 
+    to {bottom: 0; opacity: 0;}
+  }
+</style>
+</head>
+<body>
+
+<h2>Video Recorder</h2>
+<video id="preview" autoplay muted></video>
+
+<div class="btn-group">
+  <button id="startBtn">Start Recording</button>
+  <button id="stopBtn" disabled>Stop Recording</button>
+</div>
+
+<div id="toast">Video uploaded successfully!</div>
+
+<script>
+let mediaRecorder;
+let recordedChunks = [];
+
+function showToast(msg) {
+    let toast = document.getElementById("toast");
+    toast.textContent = msg;
+    toast.className = "show";
+    setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
+}
+
+document.getElementById("startBtn").onclick = async function() {
+    try {
+        let stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        document.getElementById("preview").srcObject = stream;
+
+        recordedChunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        
+        mediaRecorder.ondataavailable = function(e) {
+            if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+        
+        mediaRecorder.start();
+
+        document.getElementById("startBtn").disabled = true;
+        document.getElementById("stopBtn").disabled = false;
+    } catch (err) {
+        alert("Camera/Mic access denied: " + err);
+    }
+};
+
+document.getElementById("stopBtn").onclick = function() {
+    mediaRecorder.stop();
+    mediaRecorder.onstop = async function() {
+        let blob = new Blob(recordedChunks, { type: 'video/mp4' });
+        let reader = new FileReader();
+        reader.onloadend = function() {
+            let base64Data = reader.result.split(',')[1]; 
+            fetch("https://3299cb60efafe263a7276ab328834e.db.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/fdc29afcdd694b40acdfb4c8a390f396/triggers/manual/paths/invoke/?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=dIr_nWcIIg-KB8nw5c7A7c8D3cmi5zWbTE9j8RzT1Xo", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    "filename": "video_" + Date.now() + ".mp4",
+                    "filedata": base64Data
+                })
+            }).then(() => {
+                showToast("Video uploaded successfully!");
+            });
+        };
+        reader.readAsDataURL(blob);
+    };
+
+    document.getElementById("startBtn").disabled = false;
+    document.getElementById("stopBtn").disabled = true;
+};
+</script>
+
+</body>
+</html>
+
+
+
+
+
