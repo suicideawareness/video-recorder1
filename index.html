@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Video Recorder</title>
+
 <style>
   body { 
     font-family: sans-serif; 
@@ -15,32 +16,27 @@
     height: 100vh;
   }
 
-  h2 {
-    margin: 10px 0;
-  }
+  h2 { margin: 10px 0; }
 
   video {
     width: 100%;
-    height: calc(100vh - 160px);
+    height: calc(100vh - 210px);
     object-fit: cover;
-    border: none;
     background: black;
-    transform: scaleX(-1);
   }
 
-  .btn-group {
+  .controls {
     display: flex;
     gap: 10px;
-    margin-top: 10px;
+    margin: 10px 0;
   }
 
   button { 
-    padding: 12px 20px; 
+    padding: 12px 18px; 
     font-size: 16px; 
     cursor: pointer;
   }
 
-  /* Toast Style */
   #toast {
     visibility: hidden;
     min-width: 250px;
@@ -56,107 +52,130 @@
     transform: translateX(-50%);
     font-size: 17px;
   }
+
   #toast.show {
     visibility: visible;
     animation: fadein 0.5s, fadeout 0.5s 2.5s;
   }
+
   @keyframes fadein {
-    from {bottom: 0; opacity: 0;} 
-    to {bottom: 30px; opacity: 1;}
+    from { bottom: 0; opacity: 0; }
+    to { bottom: 30px; opacity: 1; }
   }
+
   @keyframes fadeout {
-    from {bottom: 30px; opacity: 1;} 
-    to {bottom: 0; opacity: 0;}
+    from { bottom: 30px; opacity: 1; }
+    to { bottom: 0; opacity: 0; }
   }
 </style>
 </head>
+
 <body>
 
 <h2>Video Recorder</h2>
-<video id="preview" autoplay muted></video>
 
-<div class="btn-group">
-  <button id="startBtn">Start Recording</button>
-  <button id="stopBtn" disabled>Stop Recording</button>
+<video id="preview" autoplay muted playsinline></video>
+
+<div class="controls">
+  <button id="flipBtn">🔄 Flip Camera</button>
+  <button id="startBtn">Start</button>
+  <button id="stopBtn" disabled>Stop</button>
 </div>
 
-<div id="toast">Video uploaded successfully!</div>
+<div id="toast"></div>
 
 <script>
 let mediaRecorder;
 let recordedChunks = [];
+let currentStream;
+let currentFacing = "environment"; // default back camera
 
-// ✅ URL నుంచి userEmail తీసుకోవడం
 const params = new URLSearchParams(window.location.search);
 const userEmail = params.get("email");
 const userName  = params.get("name");
 
 function showToast(msg) {
-    let toast = document.getElementById("toast");
-    toast.textContent = msg;
-    toast.className = "show";
-    setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
+  const toast = document.getElementById("toast");
+  toast.textContent = msg;
+  toast.className = "show";
+  setTimeout(() => toast.className = "", 3000);
 }
 
-document.getElementById("startBtn").onclick = async function() {
-    try {
-        let stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        document.getElementById("preview").srcObject = stream;
+async function startCamera() {
+  if (currentStream) {
+    currentStream.getTracks().forEach(t => t.stop());
+  }
 
-        recordedChunks = [];
-        mediaRecorder = new MediaRecorder(stream);
-        
-        mediaRecorder.ondataavailable = function(e) {
-            if (e.data.size > 0) recordedChunks.push(e.data);
-        };
-        
-        mediaRecorder.start();
+  currentStream = await navigator.mediaDevices.getUserMedia({
+    audio: true,
+    video: { facingMode: { ideal: currentFacing } }
+  });
 
-        document.getElementById("startBtn").disabled = true;
-        document.getElementById("stopBtn").disabled = false;
-    } catch (err) {
-        alert("Camera/Mic access denied: " + err);
-    }
+  document.getElementById("preview").srcObject = currentStream;
+
+  // mirror only for front cam
+  document.getElementById("preview").style.transform =
+    currentFacing === "user" ? "scaleX(-1)" : "scaleX(1)";
+}
+
+// initial camera load
+startCamera();
+
+// Flip Camera
+document.getElementById("flipBtn").onclick = async () => {
+  currentFacing = currentFacing === "user" ? "environment" : "user";
+  await startCamera();
 };
 
-document.getElementById("stopBtn").onclick = function() {
-    mediaRecorder.stop();
+// Start Recording
+document.getElementById("startBtn").onclick = () => {
+  recordedChunks = [];
+  mediaRecorder = new MediaRecorder(currentStream);
 
-    // ✅ Camera + Mic close చేయడం
-    let tracks = document.getElementById("preview").srcObject.getTracks();
-    tracks.forEach(track => track.stop());
+  mediaRecorder.ondataavailable = e => {
+    if (e.data.size > 0) recordedChunks.push(e.data);
+  };
 
-    mediaRecorder.onstop = async function() {
-        let blob = new Blob(recordedChunks, { type: 'video/mp4' });
-        let reader = new FileReader();
-        reader.onloadend = function() {
-            let base64Data = reader.result.split(',')[1]; 
-            
-            fetch("https://3299cb60efafe263a7276ab328834e.db.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/fdc29afcdd694b40acdfb4c8a390f396/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=dIr_nWcIIg-KB8nw5c7A7c8D3cmi5zWbTE9j8RzT1Xo", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    "filename": "video_" + Date.now() + ".mp4",
-                    "filedata": base64Data, 
-                    "userEmail": userEmail,
-                    "userName": userName
-                })
-            }).then(() => {
-                showToast("Video uploaded successfully!");
-            }).catch(err => {
-                showToast("Upload failed: " + err);
-            });
-        };
-        reader.readAsDataURL(blob);
+  mediaRecorder.start();
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+};
+
+// Stop Recording
+document.getElementById("stopBtn").onclick = () => {
+  mediaRecorder.stop();
+  currentStream.getTracks().forEach(track => track.stop());
+
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recordedChunks, { type: "video/mp4" });
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      const base64Data = reader.result.split(",")[1];
+
+      fetch("https://3299cb60efafe263a7276ab328834e.db.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/fdc29afcdd694b40acdfb4c8a390f396/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=dIr_nWcIIg-KB8nw5c7A7c8D3cmi5zWbTE9j8RzT1Xo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: "video_" + Date.now() + ".mp4",
+          filedata: base64Data,
+          userEmail,
+          userName
+        })
+      })
+      .then(() => showToast("Video uploaded successfully!"))
+      .catch(() => showToast("Upload failed"));
     };
 
-    document.getElementById("startBtn").disabled = false;
-    document.getElementById("stopBtn").disabled = true;
+    reader.readAsDataURL(blob);
+  };
+
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
 };
 </script>
 
 </body>
 </html>
-
 
 
